@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -18,7 +19,16 @@ KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY", "")
 KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET", "")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "https://localhost:5000")
 
-# AI 요약 API 키 (선택사항 - 미입력시 규칙 기반 스마트 요약 적용)
+# GitHub Secrets 등 환경변수에서 KAKAO_TOKEN_JSON이 전달된 경우 파일로 자동 복원
+env_token_str = os.getenv("KAKAO_TOKEN_JSON", "")
+if env_token_str and not TOKEN_PATH.exists():
+    try:
+        with open(TOKEN_PATH, "w", encoding="utf-8") as f:
+            f.write(env_token_str)
+    except Exception:
+        pass
+
+# AI 요약 API 키 (선택사항)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # 대안 메신저 웹훅 (선택사항)
