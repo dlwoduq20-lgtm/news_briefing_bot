@@ -1,3 +1,5 @@
+import os
+import sys
 import json
 import logging
 import requests
@@ -16,12 +18,23 @@ class KakaoSender:
 
     def __init__(self, token_file: Path = TOKEN_PATH, rest_api_key: str = KAKAO_REST_API_KEY, client_secret: str = KAKAO_CLIENT_SECRET):
         self.token_file = Path(token_file)
-        self.rest_api_key = rest_api_key
-        self.client_secret = client_secret
+        self.rest_api_key = rest_api_key or os.getenv("KAKAO_REST_API_KEY", "")
+        self.client_secret = client_secret or os.getenv("KAKAO_CLIENT_SECRET", "")
         self.tokens: Optional[Dict[str, Any]] = None
         self._load_tokens()
 
     def _load_tokens(self) -> bool:
+        # 1. 환경 변수(GitHub Secrets 등)에서 직접 토큰 JSON 로드
+        env_token_str = os.getenv("KAKAO_TOKEN_JSON", "")
+        if env_token_str:
+            try:
+                self.tokens = json.loads(env_token_str)
+                logging.info("환경변수(KAKAO_TOKEN_JSON)에서 토큰을 성공적으로 로드했습니다.")
+                return True
+            except Exception as e:
+                logging.warning(f"환경변수 KAKAO_TOKEN_JSON 파싱 실패: {e}")
+
+        # 2. 파일에서 토큰 로드
         if self.token_file.exists():
             try:
                 with open(self.token_file, "r", encoding="utf-8") as f:
@@ -39,7 +52,7 @@ class KakaoSender:
                     json.dump(self.tokens, f, ensure_ascii=False, indent=2)
                 logging.info(f"토큰 정보 갱신 및 저장 완료: {self.token_file}")
             except Exception as e:
-                logging.error(f"토큰 저장 실패: {e}")
+                logging.warning(f"토큰 저장 건너뜀 (읽기 전용 환경일 수 있음): {e}")
 
     def refresh_access_token(self) -> bool:
         """
@@ -50,7 +63,7 @@ class KakaoSender:
             return False
 
         if not self.rest_api_key:
-            logging.error("KAKAO_REST_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
+            logging.error("KAKAO_REST_API_KEY가 설정되지 않았습니다.")
             return False
 
         payload = {
@@ -67,7 +80,6 @@ class KakaoSender:
                 new_token_data = response.json()
                 self.tokens["access_token"] = new_token_data["access_token"]
                 
-                # Refresh token이 함께 갱신된 경우 업데이트
                 if "refresh_token" in new_token_data:
                     self.tokens["refresh_token"] = new_token_data["refresh_token"]
                 
@@ -87,17 +99,15 @@ class KakaoSender:
         글자수가 1000자를 초과할 경우 안전하게 분할 전송합니다.
         """
         if not self.tokens or "access_token" not in self.tokens:
-            logging.warning("카카오톡 토큰이 없습니다. get_kakao_token.py를 실행하여 연동해주세요.")
+            logging.warning("카카오톡 토큰이 없습니다. get_kakao_token.py 또는 KAKAO_TOKEN_JSON 환경변수를 확인하세요.")
             return False
 
-        # 1000자 단위 분할
         max_len = 950
         chunks = [message_text[i:i + max_len] for i in range(0, len(message_text), max_len)]
 
         for chunk in chunks:
             success = self._send_single_chunk(chunk, web_url)
             if not success:
-                # 401 에러(만료) 시 토큰 갱신 후 재시도
                 logging.info("토큰 갱신 후 메시지 재전송을 시도합니다...")
                 if self.refresh_access_token():
                     retry_success = self._send_single_chunk(chunk, web_url)
@@ -145,6 +155,6 @@ class KakaoSender:
 if __name__ == "__main__":
     sender = KakaoSender()
     if not sender.tokens:
-        print("토큰 파일이 없습니다. get_kakao_token.py를 먼저 실행하세요.")
+        print("토큰 정보가 없습니다.")
     else:
         sender.send_text_message("테스트 메시지입니다.")
